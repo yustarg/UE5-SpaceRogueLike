@@ -28,17 +28,6 @@ Build/
 SourceArt/**/*.png
 SourceArt/**/*.tga
 
-# Binary Files
-*.uasset
-*.umap
-*.upk
-*.udk
-
-# Don't ignore these binary files
-!Content/Blueprints/*.uasset
-!Content/Materials/*.uasset
-!Content/Levels/*.umap
-
 # Configuration files
 !Config/*.ini
 
