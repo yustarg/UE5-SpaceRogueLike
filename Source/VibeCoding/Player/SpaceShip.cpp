@@ -8,6 +8,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "DrawDebugHelpers.h"
 
 ASpaceShip::ASpaceShip()
 {
@@ -43,9 +44,15 @@ ASpaceShip::ASpaceShip()
 
 	// Configure Character Movement
 	GetCharacterMovement()->bOrientRotationToMovement = false; // We'll handle rotation manually
+	GetCharacterMovement()->bUseControllerDesiredRotation = false; // Don't let movement component handle rotation
 	GetCharacterMovement()->GravityScale = 0.0f; // No gravity in space
 	GetCharacterMovement()->MaxWalkSpeed = 600.0f;
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.0f;
+	
+	// Disable controller rotation influence
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
 	
 	// Constrain movement to XY plane
 	GetCharacterMovement()->bConstrainToPlane = true;
@@ -181,28 +188,52 @@ void ASpaceShip::RotateTowardsCursor(float DeltaTime)
 		return;
 	}
 
-	// Get mouse position in world
-	FHitResult HitResult;
-	PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-
-	if (HitResult.bBlockingHit)
+	FVector WorldOrigin;
+	FVector WorldDirection;
+	if (PC->DeprojectMousePositionToWorld(WorldOrigin, WorldDirection))
 	{
-		// Calculate direction to cursor
-		FVector CursorLocation = HitResult.Location;
-		FVector ShipLocation = GetActorLocation();
-		FVector Direction = (CursorLocation - ShipLocation).GetSafeNormal2D();
+		const FVector ShipLocation = GetActorLocation();
+		
+		// Intersection with the plane Z = ShipLocation.Z
+		// Plane equation: n . (P - P0) = 0 where n = (0,0,1) and P0 = ShipLocation
+		// Ray equation: P = WorldOrigin + WorldDirection * T
+		// (0,0,1) . (WorldOrigin + WorldDirection * T - ShipLocation) = 0
+		// WorldOrigin.Z + WorldDirection.Z * T - ShipLocation.Z = 0
+		// T = (ShipLocation.Z - WorldOrigin.Z) / WorldDirection.Z
 
-		// Calculate target rotation
-		FRotator TargetRotation = Direction.Rotation();
+		if (FMath::Abs(WorldDirection.Z) > 0.0001f)
+		{
+			const float T = (ShipLocation.Z - WorldOrigin.Z) / WorldDirection.Z;
+			
+			// Only consider intersections in front of the camera
+			if (T > 0.0f)
+			{
+				const FVector ImpactPoint = WorldOrigin + (WorldDirection * T);
+				
+				// Calculate direction from ship to impact point
+				FVector TargetDirection = ImpactPoint - ShipLocation;
+				TargetDirection.Z = 0.0f; // Keep it on the XY plane
 
-		// Smoothly interpolate to target rotation
-		FRotator NewRotation = FMath::RInterpTo(
-			GetActorRotation(),
-			TargetRotation,
-			DeltaTime,
-			RotationSpeed
-		);
+				// If the cursor is too close to the ship, don't update rotation to avoid "jumping"
+				if (TargetDirection.SizeSquared() > 2500.0f) // 50 units distance
+				{
+					FRotator TargetRotation = TargetDirection.Rotation();
+					
+					// Smoothly interpolate to target rotation
+					FRotator CurrentRotation = GetActorRotation();
+					FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotation, DeltaTime, RotationSpeed);
+					
+					// Force pitch and roll to 0
+					NewRotation.Pitch = 0.0f;
+					NewRotation.Roll = 0.0f;
 
-		SetActorRotation(NewRotation);
+					SetActorRotation(NewRotation);
+				}
+
+				// Optional: Debug visualization
+				// DrawDebugSphere(GetWorld(), ImpactPoint, 20.0f, 12, FColor::Red, false, -1.0f);
+				// DrawDebugLine(GetWorld(), ShipLocation, ImpactPoint, FColor::Green, false, -1.0f);
+			}
+		}
 	}
 }
