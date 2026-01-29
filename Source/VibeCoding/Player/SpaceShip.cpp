@@ -180,6 +180,24 @@ void ASpaceShip::Die()
 	// TODO: Play death effects
 }
 
+float ASpaceShip::GetHealth() const
+{
+	if (AttributeSet)
+	{
+		return AttributeSet->GetHealth();
+	}
+	return 0.0f;
+}
+
+float ASpaceShip::GetMaxHealth() const
+{
+	if (AttributeSet)
+	{
+		return AttributeSet->GetMaxHealth();
+	}
+	return 0.0f;
+}
+
 void ASpaceShip::RotateTowardsCursor(float DeltaTime)
 {
 	APlayerController* PC = Cast<APlayerController>(GetController());

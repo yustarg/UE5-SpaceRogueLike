@@ -61,7 +61,7 @@ protected:
 	UAbilitySystemComponent* AbilitySystemComponent;
 
 	/** Attribute Set */
-	UPROPERTY()
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities")
 	USpaceShipAttributeSet* AttributeSet;
 
 	/** Camera Boom */
@@ -106,6 +106,14 @@ protected:
 
 	/** Called when character dies */
 	virtual void Die();
+
+	/** Get current health from attributes */
+	UFUNCTION(BlueprintPure, Category = "Health")
+	float GetHealth() const;
+
+	/** Get max health from attributes */
+	UFUNCTION(BlueprintPure, Category = "Health")
+	float GetMaxHealth() const;
 
 	/** Is the character dead? */
 	UPROPERTY(BlueprintReadOnly, Category = "Health")
