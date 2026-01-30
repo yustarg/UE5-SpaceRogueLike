@@ -37,7 +37,7 @@ protected:
 	//=============================================================================
 	
 	/** Enemy class to spawn */
-	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Spawning")
 	TSubclassOf<AEnemyBase> EnemyClass;
 
 	/** Current spawn interval (seconds) */
