@@ -2,7 +2,7 @@
 
 #include "EnemyAIController.h"
 #include "Kismet/GameplayStatics.h"
-#include "Navigation/PathFollowingComponent.h"
+#include "GameFramework/Pawn.h"
 
 AEnemyAIController::AEnemyAIController()
 {
@@ -46,8 +46,25 @@ void AEnemyAIController::ChasePlayer()
 		}
 	}
 
-	// Move towards player
-	// MVP: Simple move to location (no pathfinding for space game)
+	// Get controlled pawn
+	APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn)
+	{
+		return;
+	}
+
+	// Calculate direction to player
+	FVector EnemyLocation = ControlledPawn->GetActorLocation();
 	FVector PlayerLocation = PlayerPawn->GetActorLocation();
-	MoveToLocation(PlayerLocation, 50.0f); // Accept radius of 50 units
+	FVector Direction = (PlayerLocation - EnemyLocation).GetSafeNormal2D();
+
+	// Directly add movement input (no pathfinding needed for space game)
+	ControlledPawn->AddMovementInput(Direction, 1.0f);
+
+	// Optionally rotate enemy to face player
+	if (!Direction.IsNearlyZero())
+	{
+		FRotator TargetRotation = Direction.Rotation();
+		ControlledPawn->SetActorRotation(TargetRotation);
+	}
 }

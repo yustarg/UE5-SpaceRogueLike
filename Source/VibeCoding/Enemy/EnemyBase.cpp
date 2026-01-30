@@ -5,6 +5,7 @@
 #include "SpaceShipAttributeSet.h"
 #include "SpaceRoguelikeGameState.h"
 #include "SpaceShip.h"
+#include "EnemyAIController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -28,9 +29,13 @@ AEnemyBase::AEnemyBase()
 
 	// Configure Character Movement
 	GetCharacterMovement()->GravityScale = 0.0f; // No gravity in space
-	GetCharacterMovement()->MaxWalkSpeed = 400.0f; // Slower than player
+	GetCharacterMovement()->MaxWalkSpeed = 600.0f; // Same speed as player
 	GetCharacterMovement()->bConstrainToPlane = true;
 	GetCharacterMovement()->SetPlaneConstraintNormal(FVector(0.0f, 0.0f, 1.0f));
+
+	// Configure AI
+	AIControllerClass = AEnemyAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	// Default values
 	ContactDamage = 10.0f;

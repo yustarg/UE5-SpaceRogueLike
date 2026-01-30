@@ -12,13 +12,13 @@ void UEnemySpawnSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	// Set default values
-	InitialSpawnInterval = 2.0f;
-	MinSpawnInterval = 0.5f;
+	// Set default values - MASSIVE HORDE MODE 🌊
+	InitialSpawnInterval = 0.5f;      // Start spawning every 0.5 seconds (was 2.0f)
+	MinSpawnInterval = 0.1f;          // Can go as fast as 0.1 seconds (was 0.5f)
 	CurrentSpawnInterval = InitialSpawnInterval;
-	MaxActiveEnemies = 50;
-	DifficultyAdjustInterval = 30.0f;
-	SpawnIntervalMultiplier = 0.9f;
+	MaxActiveEnemies = 200;           // Allow up to 200 enemies (was 50)
+	DifficultyAdjustInterval = 10.0f; // Increase difficulty every 10 seconds (was 30.0f)
+	SpawnIntervalMultiplier = 0.85f;  // Reduce interval by 15% each time (was 0.9f)
 	SpawnDistance = 2000.0f;
 	DespawnDistance = 5000.0f;
 	GameTime = 0.0f;
@@ -26,7 +26,7 @@ void UEnemySpawnSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	// Start spawning
 	UpdateSpawnTimer();
 
-	UE_LOG(LogTemp, Log, TEXT("EnemySpawnSubsystem Initialized"));
+	UE_LOG(LogTemp, Warning, TEXT("EnemySpawnSubsystem Initialized - HORDE MODE ENABLED! MaxEnemies: %d"), MaxActiveEnemies);
 }
 
 void UEnemySpawnSubsystem::Deinitialize()
@@ -81,12 +81,6 @@ void UEnemySpawnSubsystem::OnEnemyDied(AEnemyBase* Enemy)
 
 void UEnemySpawnSubsystem::SpawnEnemy()
 {
-	// Check if we've reached the max
-	if (ActiveEnemies.Num() >= MaxActiveEnemies)
-	{
-		return;
-	}
-
 	// Get enemy class (in real game, load from config)
 	if (!EnemyClass)
 	{
@@ -96,34 +90,47 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 		return;
 	}
 
-	// Get spawn location
-	FVector SpawnLocation = GetRandomSpawnLocation();
-
-	// Spawn enemy
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	AEnemyBase* Enemy = GetWorld()->SpawnActor<AEnemyBase>(
-		EnemyClass,
-		SpawnLocation,
-		FRotator::ZeroRotator,
-		SpawnParams
-	);
-
-	if (Enemy)
+	// Spawn multiple enemies per tick for HORDE MODE 🌊
+	// Spawn 2-3 enemies at a time for massive waves
+	int32 EnemiesToSpawn = FMath::RandRange(2, 3);
+	
+	for (int32 i = 0; i < EnemiesToSpawn; i++)
 	{
-		// Apply enemy scaling
-		ApplyEnemyScaling(Enemy, GameTime);
+		// Check if we've reached the max
+		if (ActiveEnemies.Num() >= MaxActiveEnemies)
+		{
+			return;
+		}
 
-		// Set AI controller
-		Enemy->AIControllerClass = AEnemyAIController::StaticClass();
-		Enemy->SpawnDefaultController();
+		// Get spawn location
+		FVector SpawnLocation = GetRandomSpawnLocation();
 
-		// Add to active list
-		ActiveEnemies.Add(Enemy);
+		// Spawn enemy
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-		UE_LOG(LogTemp, Log, TEXT("Enemy spawned at %s"), *SpawnLocation.ToString());
+		AEnemyBase* Enemy = GetWorld()->SpawnActor<AEnemyBase>(
+			EnemyClass,
+			SpawnLocation,
+			FRotator::ZeroRotator,
+			SpawnParams
+		);
+
+		if (Enemy)
+		{
+			// Apply enemy scaling
+			ApplyEnemyScaling(Enemy, GameTime);
+
+			// AI controller is now set in EnemyBase constructor
+			// No need to manually call SpawnDefaultController() - it's automatic with AutoPossessAI
+
+			// Add to active list
+			ActiveEnemies.Add(Enemy);
+		}
 	}
+	
+	// Log total enemies
+	UE_LOG(LogTemp, Log, TEXT("Spawned %d enemies. Total active: %d / %d"), EnemiesToSpawn, ActiveEnemies.Num(), MaxActiveEnemies);
 }
 
 FVector UEnemySpawnSubsystem::GetRandomSpawnLocation() const
@@ -136,14 +143,17 @@ FVector UEnemySpawnSubsystem::GetRandomSpawnLocation() const
 
 	FVector PlayerLocation = Player->GetActorLocation();
 
-	// Random angle around player
+	// Random angle around player (360 degrees)
 	float RandomAngle = FMath::RandRange(0.0f, 360.0f);
 	float RadAngle = FMath::DegreesToRadians(RandomAngle);
 
+	// Random distance for layered waves (between SpawnDistance and SpawnDistance * 1.5)
+	float RandomDistance = FMath::RandRange(SpawnDistance * 0.8f, SpawnDistance * 1.2f);
+
 	// Calculate offset
 	FVector Offset = FVector(
-		FMath::Cos(RadAngle) * SpawnDistance,
-		FMath::Sin(RadAngle) * SpawnDistance,
+		FMath::Cos(RadAngle) * RandomDistance,
+		FMath::Sin(RadAngle) * RandomDistance,
 		0.0f
 	);
 
