@@ -6,9 +6,13 @@
 #include "SpaceRoguelikeGameState.h"
 #include "SpaceShip.h"
 #include "EnemyAIController.h"
+#include "EnemyPoolSubsystem.h"
+#include "EnemySpawnSubsystem.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "AIController.h"
+#include "Navigation/PathFollowingComponent.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -41,6 +45,71 @@ AEnemyBase::AEnemyBase()
 	ContactDamage = 10.0f;
 	bIsDead = false;
 	bHasDealtDamage = false;
+}
+
+void AEnemyBase::Activate(const FVector& Location)
+{
+	SetActorLocation(Location);
+	bIsDead = false;
+	bHasDealtDamage = false;
+	
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(true);
+	
+	// Reset Attributes
+	if (AttributeSet)
+	{
+		AttributeSet->SetHealth(AttributeSet->GetMaxHealth());
+	}
+	
+	// Restart AI
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		AIC->StopMovement();
+		// If using behavior trees, restart them here
+	}
+
+	// Update Character Movement
+	if (GetCharacterMovement())
+	{
+		GetCharacterMovement()->SetDefaultMovementMode();
+		GetCharacterMovement()->Activate();
+	}
+}
+
+void AEnemyBase::Deactivate()
+{
+	bIsDead = true;
+	
+	SetActorHiddenInGame(true);
+	SetActorEnableCollision(false);
+	
+	// Stop AI
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		AIC->StopMovement();
+	}
+	
+	if (GetCharacterMovement())
+	{
+		GetCharacterMovement()->StopMovementImmediately();
+		GetCharacterMovement()->Deactivate();
+	}
+
+	// Return to pool
+	if (UWorld* World = GetWorld())
+	{
+		// Notify Spawn Subsystem to remove from active list
+		if (UEnemySpawnSubsystem* SpawnSubsystem = World->GetSubsystem<UEnemySpawnSubsystem>())
+		{
+			SpawnSubsystem->OnEnemyDied(this);
+		}
+
+		if (UEnemyPoolSubsystem* PoolSubsystem = World->GetSubsystem<UEnemyPoolSubsystem>())
+		{
+			PoolSubsystem->ReturnToPool(this);
+		}
+	}
 }
 
 void AEnemyBase::BeginPlay()
@@ -106,8 +175,8 @@ void AEnemyBase::Die()
 	// TODO: Play death effects
 	// TODO: Spawn loot
 
-	// Destroy actor
-	Destroy();
+	// Use pool instead of Destroy
+	Deactivate();
 }
 
 void AEnemyBase::OnOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 

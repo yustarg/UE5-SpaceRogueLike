@@ -25,6 +25,12 @@ class VIBECODING_API AEnemyBase : public ACharacter, public IAbilitySystemInterf
 public:
 	AEnemyBase();
 
+	/** Activate the enemy from pool */
+	virtual void Activate(const FVector& Location);
+
+	/** Deactivate and return to pool */
+	virtual void Deactivate();
+
 protected:
 	virtual void BeginPlay() override;
 

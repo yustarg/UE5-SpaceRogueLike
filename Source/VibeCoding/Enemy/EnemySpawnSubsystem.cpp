@@ -3,6 +3,7 @@
 #include "EnemySpawnSubsystem.h"
 #include "EnemyBase.h"
 #include "EnemyAIController.h"
+#include "EnemyPoolSubsystem.h"
 #include "SpaceShipAttributeSet.h"
 #include "Kismet/GameplayStatics.h"
 #include "AbilitySystemComponent.h"
@@ -108,15 +109,19 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 
 		FVector SpawnLocation = GetRandomSpawnLocation();
 
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+		UEnemyPoolSubsystem* PoolSubsystem = GetWorld()->GetSubsystem<UEnemyPoolSubsystem>();
+		AEnemyBase* Enemy = nullptr;
 
-		AEnemyBase* Enemy = GetWorld()->SpawnActor<AEnemyBase>(
-			EnemyClass,
-			SpawnLocation,
-			FRotator::ZeroRotator,
-			SpawnParams
-		);
+		if (PoolSubsystem)
+		{
+			Enemy = PoolSubsystem->AcquireEnemy(EnemyClass, SpawnLocation);
+		}
+		else
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+			Enemy = GetWorld()->SpawnActor<AEnemyBase>(EnemyClass, SpawnLocation, FRotator::ZeroRotator, SpawnParams);
+		}
 
 		if (Enemy)
 		{
@@ -211,8 +216,8 @@ void UEnemySpawnSubsystem::CleanupDistantEnemies()
 		if (Distance > DespawnDistance)
 		{
 			UE_LOG(LogTemp, Log, TEXT("Despawning distant enemy (%.2f units away)"), Distance);
-			Enemy->Destroy();
-			ActiveEnemies.RemoveAt(i);
+			Enemy->Deactivate();
+			// No need to remove from ActiveEnemies here, Deactivate() calls OnEnemyDied() which handles it
 		}
 	}
 }
