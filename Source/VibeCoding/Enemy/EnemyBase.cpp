@@ -45,6 +45,7 @@ AEnemyBase::AEnemyBase()
 	ContactDamage = 10.0f;
 	bIsDead = false;
 	bHasDealtDamage = false;
+	HISMInstanceIndex = INDEX_NONE;
 }
 
 void AEnemyBase::Activate(const FVector& Location)
@@ -99,7 +100,7 @@ void AEnemyBase::Deactivate()
 	// Return to pool
 	if (UWorld* World = GetWorld())
 	{
-		// Notify Spawn Subsystem to remove from active list
+		// Notify Spawn Subsystem to remove from active list and hide HISM instance
 		if (UEnemySpawnSubsystem* SpawnSubsystem = World->GetSubsystem<UEnemySpawnSubsystem>())
 		{
 			SpawnSubsystem->OnEnemyDied(this);

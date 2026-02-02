@@ -7,10 +7,11 @@
 #include "EnemySpawnSubsystem.generated.h"
 
 class AEnemyBase;
+class UHierarchicalInstancedStaticMeshComponent;
 
 /**
  * Enemy Spawn Subsystem
- * Manages enemy spawning with increasing difficulty
+ * Manages enemy spawning with HISM rendering optimization
  */
 UCLASS()
 class VIBECODING_API UEnemySpawnSubsystem : public UWorldSubsystem, public FTickableGameObject
@@ -18,18 +19,32 @@ class VIBECODING_API UEnemySpawnSubsystem : public UWorldSubsystem, public FTick
 	GENERATED_BODY()
 
 public:
-	// Subsystem Interface
+	// ... (保留 Initialize/Deinitialize)
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
-	// FTickableGameObject Interface
+	// ... (保留 Tick 等)
 	virtual void Tick(float DeltaTime) override;
-	virtual TStatId GetStatId() const override;
-	virtual bool IsTickable() const override { return !IsTemplate(); }
+
+	/** Set the mesh used for HISM (called from BP or World Settings) */
+	UFUNCTION(BlueprintCallable, Category = "Spawning|Optimization")
+	void SetEnemyMesh(UStaticMesh* Mesh);
 
 	/** Called when an enemy dies (remove from active list) */
 	UFUNCTION(BlueprintCallable, Category = "Spawning")
 	void OnEnemyDied(AEnemyBase* Enemy);
+
+protected:
+	/** HISM Component for massive crowd rendering */
+	UPROPERTY()
+	UHierarchicalInstancedStaticMeshComponent* HISMComponent;
+
+	/** The mesh to use for all enemies */
+	UPROPERTY(EditDefaultsOnly, Category = "Spawning|Optimization")
+	UStaticMesh* EnemyStaticMesh;
+
+	virtual TStatId GetStatId() const override;
+	virtual bool IsTickable() const override { return !IsTemplate(); }
 
 protected:
 	//=============================================================================

@@ -8,10 +8,28 @@
 #include "Kismet/GameplayStatics.h"
 #include "AbilitySystemComponent.h"
 #include "TimerManager.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 
 void UEnemySpawnSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+
+	// Create HISM Component on a dummy actor
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.ObjectFlags |= RF_Transient; // Don't save this actor
+	AActor* HISMContainer = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	
+	if (HISMContainer)
+	{
+		HISMComponent = NewObject<UHierarchicalInstancedStaticMeshComponent>(HISMContainer, TEXT("EnemyHISM"));
+		HISMComponent->RegisterComponent();
+		HISMContainer->SetRootComponent(HISMComponent);
+		
+		// Optimization: Disable collision for HISM (we use Actor capsules for collision)
+		HISMComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		HISMComponent->CastShadow = false;
+		HISMComponent->SetCanEverAffectNavigation(false);
+	}
 
 	// Set default values - TRUE SURVIVOR MODE 🌊🌊🌊
 	InitialSpawnInterval = 0.3f;      // Even faster start
@@ -27,7 +45,7 @@ void UEnemySpawnSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	// Start spawning
 	UpdateSpawnTimer();
 
-	UE_LOG(LogTemp, Warning, TEXT("EnemySpawnSubsystem Initialized - SURVIVOR MODE ACTIVE! MaxEnemies: %d"), MaxActiveEnemies);
+	UE_LOG(LogTemp, Warning, TEXT("EnemySpawnSubsystem Initialized - HISM SURVIVOR MODE!"));
 }
 
 void UEnemySpawnSubsystem::Deinitialize()
@@ -61,6 +79,28 @@ void UEnemySpawnSubsystem::Tick(float DeltaTime)
 		UpdateSpawnTimer();
 	}
 
+	// Update HISM Instances
+	if (HISMComponent)
+	{
+		for (AEnemyBase* Enemy : ActiveEnemies)
+		{
+		if (IsValid(Enemy) && Enemy->GetHISMInstanceIndex() != INDEX_NONE)
+			{
+				if (Enemy->IsHidden())
+				{
+					// Hide by scaling to zero
+				HISMComponent->UpdateInstanceTransform(Enemy->GetHISMInstanceIndex(), FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector::ZeroVector), true, false);
+				}
+				else
+				{
+				HISMComponent->UpdateInstanceTransform(Enemy->GetHISMInstanceIndex(), Enemy->GetActorTransform(), true, false);
+				}
+			}
+		}
+		// Batch send to GPU
+		HISMComponent->MarkRenderStateDirty();
+	}
+
 	// Cleanup distant enemies (less frequent for performance)
 	static float CleanupTimer = 0.0f;
 	CleanupTimer += DeltaTime;
@@ -70,6 +110,15 @@ void UEnemySpawnSubsystem::Tick(float DeltaTime)
 		CleanupDistantEnemies();
 	}
 }
+
+void UEnemySpawnSubsystem::SetEnemyMesh(UStaticMesh* Mesh)
+{
+	if (HISMComponent && Mesh)
+	{
+		HISMComponent->SetStaticMesh(Mesh);
+	}
+}
+
 
 TStatId UEnemySpawnSubsystem::GetStatId() const
 {
@@ -81,6 +130,12 @@ void UEnemySpawnSubsystem::OnEnemyDied(AEnemyBase* Enemy)
 	if (Enemy)
 	{
 		ActiveEnemies.Remove(Enemy);
+
+		// Hide HISM instance immediately on death/deactivation
+		if (HISMComponent && Enemy->GetHISMInstanceIndex() != INDEX_NONE)
+		{
+			HISMComponent->UpdateInstanceTransform(Enemy->GetHISMInstanceIndex(), FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector::ZeroVector), true, true);
+		}
 	}
 }
 
@@ -127,6 +182,21 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 		{
 			ApplyEnemyScaling(Enemy, GameTime);
 			ActiveEnemies.Add(Enemy);
+
+			// HISM Integration
+			if (HISMComponent)
+			{
+					if (Enemy->GetHISMInstanceIndex() == INDEX_NONE)
+				{
+					// Add new instance if first time
+						Enemy->SetHISMInstanceIndex(HISMComponent->AddInstance(Enemy->GetActorTransform(), true));
+				}
+				else
+				{
+					// Reuse existing index
+						HISMComponent->UpdateInstanceTransform(Enemy->GetHISMInstanceIndex(), Enemy->GetActorTransform(), true, true);
+				}
+			}
 		}
 	}
 }

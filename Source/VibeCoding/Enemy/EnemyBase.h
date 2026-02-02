@@ -31,6 +31,10 @@ public:
 	/** Deactivate and return to pool */
 	virtual void Deactivate();
 
+	/** HISM instance index accessors */
+	int32 GetHISMInstanceIndex() const { return HISMInstanceIndex; }
+	void SetHISMInstanceIndex(int32 Index) { HISMInstanceIndex = Index; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -70,6 +74,10 @@ protected:
 	/** Is the enemy dead? */
 	UPROPERTY(BlueprintReadOnly, Category = "Health")
 	bool bIsDead;
+
+	/** Index of this enemy in the HISM component */
+	UPROPERTY(BlueprintReadOnly, Category = "Optimization")
+	int32 HISMInstanceIndex;
 
 	//=============================================================================
 	// Combat (Contact Damage)
