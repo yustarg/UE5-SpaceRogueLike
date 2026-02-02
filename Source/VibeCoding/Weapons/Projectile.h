@@ -22,8 +22,17 @@ class VIBECODING_API AProjectile : public AActor
 public:	
 	AProjectile();
 
+	/** Activate the projectile from pool */
+	virtual void Activate(const FVector& Location, const FRotator& Rotation, AActor* InOwner);
+
+	/** Deactivate and return to pool */
+	virtual void Deactivate();
+
 protected:
 	virtual void BeginPlay() override;
+
+	/** Timer for auto-deactivation */
+	FTimerHandle DeactivateTimerHandle;
 
 public:
 	/** Set damage value */

@@ -3,6 +3,7 @@
 #include "GA_Fire.h"
 #include "Projectile.h"
 #include "SpaceShipAttributeSet.h"
+#include "ProjectilePoolSubsystem.h"
 #include "AbilitySystemComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -12,7 +13,7 @@ UGA_Fire::UGA_Fire()
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerExecution;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	
-	SpawnOffset = 100.0f;
+	SpawnOffset = 100.0f; // Increased to ensure it clears the ship's capsule
 }
 
 void UGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
@@ -38,20 +39,31 @@ void UGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	FVector SpawnLocation = Owner->GetActorLocation() + Owner->GetActorForwardVector() * SpawnOffset;
 	FRotator SpawnRotation = Owner->GetActorRotation();
 
-	// Spawn projectile
+	// Spawn projectile using pool
 	if (ProjectileClass)
 	{
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.Owner = Owner;
-		SpawnParams.Instigator = Cast<APawn>(Owner);
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		UProjectilePoolSubsystem* PoolSubsystem = GetWorld()->GetSubsystem<UProjectilePoolSubsystem>();
+		AProjectile* Projectile = nullptr;
 
-		AProjectile* Projectile = GetWorld()->SpawnActor<AProjectile>(
-			ProjectileClass,
-			SpawnLocation,
-			SpawnRotation,
-			SpawnParams
-		);
+		if (PoolSubsystem)
+		{
+			Projectile = PoolSubsystem->AcquireProjectile(ProjectileClass, SpawnLocation, SpawnRotation, Owner);
+		}
+		else
+		{
+			// Fallback if subsystem not found
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.Owner = Owner;
+			SpawnParams.Instigator = Cast<APawn>(Owner);
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			Projectile = GetWorld()->SpawnActor<AProjectile>(
+				ProjectileClass,
+				SpawnLocation,
+				SpawnRotation,
+				SpawnParams
+			);
+		}
 
 		if (Projectile)
 		{
@@ -66,8 +78,6 @@ void UGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 					Projectile->SetDamage(DamageValue);
 				}
 			}
-
-			UE_LOG(LogTemp, Log, TEXT("Projectile spawned at %s"), *SpawnLocation.ToString());
 		}
 	}
 

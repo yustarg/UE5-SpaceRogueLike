@@ -3,6 +3,7 @@
 #include "Projectile.h"
 #include "EnemyBase.h"
 #include "SpaceShipAttributeSet.h"
+#include "ProjectilePoolSubsystem.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -36,22 +37,75 @@ AProjectile::AProjectile()
 	// Default values
 	Speed = 2000.0f;
 	Damage = 10.0f;
-	Lifetime = 3.0f; // 3 seconds before auto-destroy
+	Lifetime = 3.0f; // 3 seconds before auto-deactivate
+}
 
-	// Set lifespan
-	InitialLifeSpan = Lifetime;
+void AProjectile::Activate(const FVector& Location, const FRotator& Rotation, AActor* InOwner)
+{
+	SetActorLocationAndRotation(Location, Rotation);
+	SetOwner(InOwner);
+	
+	// Ignore owner collision
+	if (InOwner && CollisionComponent)
+	{
+		CollisionComponent->IgnoreActorWhenMoving(InOwner, true);
+	}
+
+	// Reset and show
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(true);
+	
+	if (MovementComponent)
+	{
+		MovementComponent->SetUpdatedComponent(CollisionComponent);
+		MovementComponent->Velocity = Rotation.Vector() * Speed;
+		MovementComponent->UpdateComponentVelocity();
+		MovementComponent->Activate(true);
+	}
+
+	// Set deactivation timer (replaces LifeSpan)
+	GetWorldTimerManager().SetTimer(DeactivateTimerHandle, this, &AProjectile::Deactivate, Lifetime);
+}
+
+void AProjectile::Deactivate()
+{
+	// Clear ignore list
+	if (AActor* MyOwner = GetOwner())
+	{
+		if (CollisionComponent)
+		{
+			CollisionComponent->IgnoreActorWhenMoving(MyOwner, false);
+		}
+	}
+
+	// Hide and disable
+	SetActorHiddenInGame(true);
+	SetActorEnableCollision(false);
+	
+	if (MovementComponent)
+	{
+		MovementComponent->StopMovementImmediately();
+		MovementComponent->Deactivate();
+	}
+
+	GetWorldTimerManager().ClearTimer(DeactivateTimerHandle);
+
+	// Return to pool
+	if (UWorld* World = GetWorld())
+	{
+		if (UProjectilePoolSubsystem* PoolSubsystem = World->GetSubsystem<UProjectilePoolSubsystem>())
+		{
+			PoolSubsystem->ReturnToPool(this);
+		}
+	}
 }
 
 void AProjectile::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Apply speed
-	if (MovementComponent)
-	{
-		MovementComponent->InitialSpeed = Speed;
-		MovementComponent->MaxSpeed = Speed;
-	}
+	// Initially deactivated if spawned via pool, but if spawned normally we might want it active
+	// For MVP, we'll let Activate handle it
 }
 
 void AProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, 
@@ -71,7 +125,6 @@ void AProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
 		if (TargetASC)
 		{
 			// Apply damage directly to AttributeSet (MVP simplified)
-			// In production, use GameplayEffect
 			USpaceShipAttributeSet* TargetAttributes = const_cast<USpaceShipAttributeSet*>(
 				TargetASC->GetSet<USpaceShipAttributeSet>()
 			);
@@ -80,14 +133,10 @@ void AProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
 			{
 				float CurrentHealth = TargetAttributes->GetHealth();
 				TargetAttributes->SetHealth(CurrentHealth - Damage);
-				
-				UE_LOG(LogTemp, Log, TEXT("Projectile dealt %f damage!"), Damage);
 			}
 		}
-
-		// TODO: Play hit effects
 	}
 
-	// Destroy projectile
-	Destroy();
+	// Deactivate instead of Destroy
+	Deactivate();
 }
