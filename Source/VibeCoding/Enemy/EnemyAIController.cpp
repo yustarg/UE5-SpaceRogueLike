@@ -8,7 +8,8 @@ AEnemyAIController::AEnemyAIController()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	
-	UpdateFrequency = 0.5f; // Update AI every 0.5 seconds (performance)
+	// Fast updates for smooth swarming in HORDE MODE
+	UpdateFrequency = 0.1f; 
 	TimeSinceLastUpdate = 0.0f;
 }
 

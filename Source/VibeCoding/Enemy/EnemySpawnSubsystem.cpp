@@ -12,21 +12,21 @@ void UEnemySpawnSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	// Set default values - MASSIVE HORDE MODE 🌊
-	InitialSpawnInterval = 0.5f;      // Start spawning every 0.5 seconds (was 2.0f)
-	MinSpawnInterval = 0.1f;          // Can go as fast as 0.1 seconds (was 0.5f)
+	// Set default values - TRUE SURVIVOR MODE 🌊🌊🌊
+	InitialSpawnInterval = 0.3f;      // Even faster start
+	MinSpawnInterval = 0.05f;         // Extreme speed at high difficulty
 	CurrentSpawnInterval = InitialSpawnInterval;
-	MaxActiveEnemies = 200;           // Allow up to 200 enemies (was 50)
-	DifficultyAdjustInterval = 10.0f; // Increase difficulty every 10 seconds (was 30.0f)
-	SpawnIntervalMultiplier = 0.85f;  // Reduce interval by 15% each time (was 0.9f)
-	SpawnDistance = 2000.0f;
-	DespawnDistance = 5000.0f;
+	MaxActiveEnemies = 1000;          // Massive horde (was 200)
+	DifficultyAdjustInterval = 5.0f;  // Scale every 5 seconds (was 10s)
+	SpawnIntervalMultiplier = 0.9f;   
+	SpawnDistance = 2500.0f;          // Spawn a bit further out for visual scale
+	DespawnDistance = 6000.0f;
 	GameTime = 0.0f;
 
 	// Start spawning
 	UpdateSpawnTimer();
 
-	UE_LOG(LogTemp, Warning, TEXT("EnemySpawnSubsystem Initialized - HORDE MODE ENABLED! MaxEnemies: %d"), MaxActiveEnemies);
+	UE_LOG(LogTemp, Warning, TEXT("EnemySpawnSubsystem Initialized - SURVIVOR MODE ACTIVE! MaxEnemies: %d"), MaxActiveEnemies);
 }
 
 void UEnemySpawnSubsystem::Deinitialize()
@@ -52,18 +52,22 @@ void UEnemySpawnSubsystem::Tick(float DeltaTime)
 	{
 		TimeSinceLastAdjustment = 0.0f;
 
-		// Reduce spawn interval (increase difficulty)
+		// Reduce spawn interval
 		CurrentSpawnInterval *= SpawnIntervalMultiplier;
 		CurrentSpawnInterval = FMath::Max(CurrentSpawnInterval, MinSpawnInterval);
 
 		// Update spawn timer
 		UpdateSpawnTimer();
-
-		UE_LOG(LogTemp, Warning, TEXT("Difficulty Increased! New spawn interval: %.2f seconds"), CurrentSpawnInterval);
 	}
 
-	// Cleanup distant enemies
-	CleanupDistantEnemies();
+	// Cleanup distant enemies (less frequent for performance)
+	static float CleanupTimer = 0.0f;
+	CleanupTimer += DeltaTime;
+	if (CleanupTimer >= 1.0f)
+	{
+		CleanupTimer = 0.0f;
+		CleanupDistantEnemies();
+	}
 }
 
 TStatId UEnemySpawnSubsystem::GetStatId() const
@@ -81,31 +85,29 @@ void UEnemySpawnSubsystem::OnEnemyDied(AEnemyBase* Enemy)
 
 void UEnemySpawnSubsystem::SpawnEnemy()
 {
-	// Get enemy class (in real game, load from config)
 	if (!EnemyClass)
 	{
-		// Try to load default enemy class
-		// For MVP, we'll just log a warning
-		UE_LOG(LogTemp, Warning, TEXT("EnemySpawnSubsystem: No EnemyClass set! Set it in Blueprint or World Settings."));
 		return;
 	}
 
-	// Spawn multiple enemies per tick for HORDE MODE 🌊
-	// Spawn 2-3 enemies at a time for massive waves
-	int32 EnemiesToSpawn = FMath::RandRange(2, 3);
+	// Spawn massive batches based on game time
+	// Start with 5, increase by 1 every 30 seconds
+	int32 BaseBatchSize = 5;
+	int32 TimeBonus = FMath::FloorToInt(GameTime / 30.0f);
+	int32 EnemiesToSpawn = BaseBatchSize + TimeBonus;
 	
+	// Limit to reasonable batch for stability
+	EnemiesToSpawn = FMath::Min(EnemiesToSpawn, 20);
+
 	for (int32 i = 0; i < EnemiesToSpawn; i++)
 	{
-		// Check if we've reached the max
 		if (ActiveEnemies.Num() >= MaxActiveEnemies)
 		{
 			return;
 		}
 
-		// Get spawn location
 		FVector SpawnLocation = GetRandomSpawnLocation();
 
-		// Spawn enemy
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
@@ -118,19 +120,10 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 
 		if (Enemy)
 		{
-			// Apply enemy scaling
 			ApplyEnemyScaling(Enemy, GameTime);
-
-			// AI controller is now set in EnemyBase constructor
-			// No need to manually call SpawnDefaultController() - it's automatic with AutoPossessAI
-
-			// Add to active list
 			ActiveEnemies.Add(Enemy);
 		}
 	}
-	
-	// Log total enemies
-	UE_LOG(LogTemp, Log, TEXT("Spawned %d enemies. Total active: %d / %d"), EnemiesToSpawn, ActiveEnemies.Num(), MaxActiveEnemies);
 }
 
 FVector UEnemySpawnSubsystem::GetRandomSpawnLocation() const
