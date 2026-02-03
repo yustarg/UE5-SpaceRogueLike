@@ -17,19 +17,22 @@ void UEnemySpawnSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	// Create HISM Component on a dummy actor
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.ObjectFlags |= RF_Transient; // Don't save this actor
-	AActor* HISMContainer = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	HISMContainerActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
 	
-	if (HISMContainer)
+	if (HISMContainerActor)
 	{
-		HISMComponent = NewObject<UHierarchicalInstancedStaticMeshComponent>(HISMContainer, TEXT("EnemyHISM"));
+		HISMComponent = NewObject<UHierarchicalInstancedStaticMeshComponent>(HISMContainerActor, TEXT("EnemyHISM"));
 		HISMComponent->RegisterComponent();
-		HISMContainer->SetRootComponent(HISMComponent);
+		HISMContainerActor->SetRootComponent(HISMComponent);
 		
 		// Optimization: Disable collision for HISM (we use Actor capsules for collision)
 		HISMComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		HISMComponent->CastShadow = false;
 		HISMComponent->SetCanEverAffectNavigation(false);
 	}
+	
+	// Initialize free list
+	FreeHISMIndices.Empty();
 
 	// Set default values - TRUE SURVIVOR MODE 🌊🌊🌊
 	InitialSpawnInterval = 0.3f;      // Even faster start
@@ -54,6 +57,21 @@ void UEnemySpawnSubsystem::Deinitialize()
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(SpawnTimerHandle);
+	}
+
+	// Cleanup HISM
+	FreeHISMIndices.Empty();
+	
+	if (HISMComponent)
+	{
+		HISMComponent->ClearInstances();
+		HISMComponent = nullptr;
+	}
+	
+	if (HISMContainerActor)
+	{
+		HISMContainerActor->Destroy();
+		HISMContainerActor = nullptr;
 	}
 
 	Super::Deinitialize();
@@ -131,10 +149,12 @@ void UEnemySpawnSubsystem::OnEnemyDied(AEnemyBase* Enemy)
 	{
 		ActiveEnemies.Remove(Enemy);
 
-		// Hide HISM instance immediately on death/deactivation
-		if (HISMComponent && Enemy->GetHISMInstanceIndex() != INDEX_NONE)
+		// Release HISM index back to free list
+		int32 HISMIndex = Enemy->GetHISMInstanceIndex();
+		if (HISMIndex != INDEX_NONE)
 		{
-			HISMComponent->UpdateInstanceTransform(Enemy->GetHISMInstanceIndex(), FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector::ZeroVector), true, true);
+			ReleaseHISMIndex(HISMIndex);
+			Enemy->SetHISMInstanceIndex(INDEX_NONE);
 		}
 	}
 }
@@ -183,19 +203,19 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 			ApplyEnemyScaling(Enemy, GameTime);
 			ActiveEnemies.Add(Enemy);
 
-			// HISM Integration
+			// HISM Integration - always acquire new index (old one was released on death)
 			if (HISMComponent)
 			{
-					if (Enemy->GetHISMInstanceIndex() == INDEX_NONE)
+				// Ensure enemy has no stale index (should be INDEX_NONE from pool)
+				if (Enemy->GetHISMInstanceIndex() != INDEX_NONE)
 				{
-					// Add new instance if first time
-						Enemy->SetHISMInstanceIndex(HISMComponent->AddInstance(Enemy->GetActorTransform(), true));
+					UE_LOG(LogTemp, Warning, TEXT("Enemy had stale HISM index %d, releasing it"), Enemy->GetHISMInstanceIndex());
+					ReleaseHISMIndex(Enemy->GetHISMInstanceIndex());
 				}
-				else
-				{
-					// Reuse existing index
-						HISMComponent->UpdateInstanceTransform(Enemy->GetHISMInstanceIndex(), Enemy->GetActorTransform(), true, true);
-				}
+				
+				// Acquire index from free list or create new
+				int32 NewIndex = AcquireHISMIndex(Enemy->GetActorTransform());
+				Enemy->SetHISMInstanceIndex(NewIndex);
 			}
 		}
 	}
@@ -310,4 +330,51 @@ void UEnemySpawnSubsystem::UpdateSpawnTimer()
 		CurrentSpawnInterval,
 		true // Loop
 	);
+}
+
+int32 UEnemySpawnSubsystem::AcquireHISMIndex(const FTransform& Transform)
+{
+	if (!HISMComponent)
+	{
+		return INDEX_NONE;
+	}
+
+	// Try to reuse from free list first
+	if (FreeHISMIndices.Num() > 0)
+	{
+		int32 ReuseIndex = FreeHISMIndices.Pop(false);
+		
+		// Validate index is still in range
+		if (ReuseIndex >= 0 && ReuseIndex < HISMComponent->GetInstanceCount())
+		{
+			// Update transform to show the instance
+			HISMComponent->UpdateInstanceTransform(ReuseIndex, Transform, true, true);
+			return ReuseIndex;
+		}
+		// Invalid index, skip it and create new
+	}
+
+	// No free index available, create new instance
+	return HISMComponent->AddInstance(Transform, true);
+}
+
+void UEnemySpawnSubsystem::ReleaseHISMIndex(int32 Index)
+{
+	if (!HISMComponent || Index == INDEX_NONE)
+	{
+		return;
+	}
+
+	// Validate index is in range
+	if (Index < 0 || Index >= HISMComponent->GetInstanceCount())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Attempted to release invalid HISM index %d (count: %d)"), Index, HISMComponent->GetInstanceCount());
+		return;
+	}
+
+	// Hide the instance by scaling to zero
+	HISMComponent->UpdateInstanceTransform(Index, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector::ZeroVector), true, true);
+
+	// Add to free list for reuse
+	FreeHISMIndices.Add(Index);
 }

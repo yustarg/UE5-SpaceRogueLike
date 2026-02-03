@@ -39,6 +39,19 @@ protected:
 	UPROPERTY()
 	UHierarchicalInstancedStaticMeshComponent* HISMComponent;
 
+	/** Container actor for HISM component (stored for cleanup) */
+	UPROPERTY()
+	AActor* HISMContainerActor;
+
+	/** Free list for recycling HISM instance indices */
+	TArray<int32> FreeHISMIndices;
+
+	/** Acquire a HISM instance index (from free list or create new) */
+	int32 AcquireHISMIndex(const FTransform& Transform);
+
+	/** Release a HISM instance index back to free list */
+	void ReleaseHISMIndex(int32 Index);
+
 	/** The mesh to use for all enemies */
 	UPROPERTY(EditDefaultsOnly, Category = "Spawning|Optimization")
 	UStaticMesh* EnemyStaticMesh;

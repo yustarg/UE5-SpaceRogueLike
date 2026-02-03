@@ -54,6 +54,9 @@ void AEnemyBase::Activate(const FVector& Location)
 	bIsDead = false;
 	bHasDealtDamage = false;
 	
+	// Reset HISM index - will be assigned by SpawnSubsystem
+	HISMInstanceIndex = INDEX_NONE;
+	
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 	
