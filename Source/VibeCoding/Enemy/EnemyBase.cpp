@@ -46,6 +46,7 @@ AEnemyBase::AEnemyBase()
 	bIsDead = false;
 	bHasDealtDamage = false;
 	HISMInstanceIndex = INDEX_NONE;
+	EnemyMesh = nullptr;
 }
 
 void AEnemyBase::Activate(const FVector& Location)

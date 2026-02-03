@@ -35,6 +35,10 @@ public:
 	int32 GetHISMInstanceIndex() const { return HISMInstanceIndex; }
 	void SetHISMInstanceIndex(int32 Index) { HISMInstanceIndex = Index; }
 
+	/** Get the static mesh used for HISM rendering */
+	UFUNCTION(BlueprintPure, Category = "Rendering")
+	UStaticMesh* GetEnemyMesh() const { return EnemyMesh; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -78,6 +82,10 @@ protected:
 	/** Index of this enemy in the HISM component */
 	UPROPERTY(BlueprintReadOnly, Category = "Optimization")
 	int32 HISMInstanceIndex;
+
+	/** Static mesh used for HISM rendering (set this in Blueprint) */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rendering")
+	UStaticMesh* EnemyMesh;
 
 	//=============================================================================
 	// Combat (Contact Damage)

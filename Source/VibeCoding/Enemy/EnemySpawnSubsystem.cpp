@@ -166,6 +166,25 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 		return;
 	}
 
+	// Auto-setup HISM mesh from enemy class CDO (only once)
+	if (HISMComponent && !HISMComponent->GetStaticMesh())
+	{
+		// Try to get mesh from EnemyClass CDO
+		if (const AEnemyBase* EnemyCDO = EnemyClass->GetDefaultObject<AEnemyBase>())
+		{
+			UStaticMesh* Mesh = EnemyCDO->GetEnemyMesh();
+			if (Mesh)
+			{
+				HISMComponent->SetStaticMesh(Mesh);
+				UE_LOG(LogTemp, Warning, TEXT("HISM: Auto-set mesh from EnemyClass CDO: %s"), *Mesh->GetName());
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error, TEXT("HISM: EnemyClass has no EnemyMesh set! Enemies will be invisible. Set EnemyMesh in the Blueprint."));
+			}
+		}
+	}
+
 	// Spawn massive batches based on game time
 	// Start with 5, increase by 1 every 30 seconds
 	int32 BaseBatchSize = 5;
@@ -204,7 +223,7 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 			ActiveEnemies.Add(Enemy);
 
 			// HISM Integration - always acquire new index (old one was released on death)
-			if (HISMComponent)
+			if (HISMComponent && HISMComponent->GetStaticMesh())
 			{
 				// Ensure enemy has no stale index (should be INDEX_NONE from pool)
 				if (Enemy->GetHISMInstanceIndex() != INDEX_NONE)
