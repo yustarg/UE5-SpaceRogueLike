@@ -16,8 +16,9 @@ AProjectile::AProjectile()
 	// Create Collision Component
 	CollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComponent"));
 	CollisionComponent->InitSphereRadius(15.0f);
-	CollisionComponent->SetCollisionProfileName(TEXT("Projectile"));
-	CollisionComponent->OnComponentHit.AddDynamic(this, &AProjectile::OnHit);
+	CollisionComponent->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+	CollisionComponent->SetGenerateOverlapEvents(true);
+	CollisionComponent->OnComponentBeginOverlap.AddDynamic(this, &AProjectile::OnOverlapBegin);
 	RootComponent = CollisionComponent;
 
 	// Create Mesh Component
@@ -108,8 +109,8 @@ void AProjectile::BeginPlay()
 	// For MVP, we'll let Activate handle it
 }
 
-void AProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, 
-	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+void AProjectile::OnOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	// Don't hit ourselves or our owner
 	if (OtherActor == this || OtherActor == GetOwner())
@@ -135,8 +136,8 @@ void AProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
 				TargetAttributes->SetHealth(CurrentHealth - Damage);
 			}
 		}
-	}
 
-	// Deactivate instead of Destroy
-	Deactivate();
+		// Deactivate after hitting enemy
+		Deactivate();
+	}
 }

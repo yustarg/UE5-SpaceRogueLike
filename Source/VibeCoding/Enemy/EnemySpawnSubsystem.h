@@ -7,11 +7,11 @@
 #include "EnemySpawnSubsystem.generated.h"
 
 class AEnemyBase;
-class UHierarchicalInstancedStaticMeshComponent;
+class UInstancedStaticMeshComponent;
 
 /**
  * Enemy Spawn Subsystem
- * Manages enemy spawning with HISM rendering optimization
+ * Manages enemy spawning with ISM (Instanced Static Mesh) rendering optimization
  */
 UCLASS()
 class VIBECODING_API UEnemySpawnSubsystem : public UWorldSubsystem, public FTickableGameObject
@@ -19,47 +19,53 @@ class VIBECODING_API UEnemySpawnSubsystem : public UWorldSubsystem, public FTick
 	GENERATED_BODY()
 
 public:
-	// ... (保留 Initialize/Deinitialize)
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
-
-	// ... (保留 Tick 等)
 	virtual void Tick(float DeltaTime) override;
 
-	/** Set the mesh used for HISM (called from BP or World Settings) */
+	/** Set the mesh used for ISM rendering */
 	UFUNCTION(BlueprintCallable, Category = "Spawning|Optimization")
 	void SetEnemyMesh(UStaticMesh* Mesh);
 
-	/** Called when an enemy dies (remove from active list) */
+	/** Called when an enemy dies */
 	UFUNCTION(BlueprintCallable, Category = "Spawning")
 	void OnEnemyDied(AEnemyBase* Enemy);
 
 protected:
-	/** HISM Component for massive crowd rendering */
+	//=============================================================================
+	// ISM Rendering
+	//=============================================================================
+	
+	/** ISM Component for crowd rendering */
 	UPROPERTY()
-	UHierarchicalInstancedStaticMeshComponent* HISMComponent;
+	UInstancedStaticMeshComponent* ISMComponent;
 
-	/** Container actor for HISM component (stored for cleanup) */
+	/** Container actor for ISM component */
 	UPROPERTY()
-	AActor* HISMContainerActor;
+	AActor* ISMContainerActor;
 
-	/** Free list for recycling HISM instance indices */
-	TArray<int32> FreeHISMIndices;
+	/** Free list for recycling ISM instance indices */
+	TArray<int32> FreeISMIndices;
 
-	/** Acquire a HISM instance index (from free list or create new) */
-	int32 AcquireHISMIndex(const FTransform& Transform);
+	/** Whether ISM has been initialized */
+	bool bISMInitialized;
 
-	/** Release a HISM instance index back to free list */
-	void ReleaseHISMIndex(int32 Index);
+	/** Scale multiplier for ISM instances */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Spawning|Optimization")
+	float ISMScaleMultiplier;
 
-	/** The mesh to use for all enemies */
-	UPROPERTY(EditDefaultsOnly, Category = "Spawning|Optimization")
-	UStaticMesh* EnemyStaticMesh;
+	/** Initialize ISM component (called on first tick) */
+	void InitializeISM();
+
+	/** Acquire an ISM instance index */
+	int32 AcquireISMIndex(const FTransform& Transform);
+
+	/** Release an ISM instance index back to free list */
+	void ReleaseISMIndex(int32 Index);
 
 	virtual TStatId GetStatId() const override;
 	virtual bool IsTickable() const override { return !IsTemplate(); }
 
-protected:
 	//=============================================================================
 	// Spawning
 	//=============================================================================
@@ -91,6 +97,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
 	int32 MaxActiveEnemies;
 
+	/** Distance from player to spawn enemies */
+	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
+	float SpawnDistance;
+
+	/** Distance from player to despawn enemies */
+	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
+	float DespawnDistance;
+
 	//=============================================================================
 	// Difficulty
 	//=============================================================================
@@ -110,27 +124,9 @@ protected:
 	// Spawning Functions
 	//=============================================================================
 	
-	/** Spawn a single enemy */
-	UFUNCTION()
 	void SpawnEnemy();
-
-	/** Get random spawn location around player */
 	FVector GetRandomSpawnLocation() const;
-
-	/** Apply enemy scaling based on game time */
 	void ApplyEnemyScaling(AEnemyBase* Enemy, float GameTimeSeconds) const;
-
-	/** Clean up distant enemies */
 	void CleanupDistantEnemies();
-
-	/** Update spawn timer with new interval */
 	void UpdateSpawnTimer();
-
-	/** Distance from player to spawn enemies */
-	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
-	float SpawnDistance;
-
-	/** Distance from player to despawn enemies */
-	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
-	float DespawnDistance;
 };

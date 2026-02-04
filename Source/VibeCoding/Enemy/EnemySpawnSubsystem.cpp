@@ -8,70 +8,107 @@
 #include "Kismet/GameplayStatics.h"
 #include "AbilitySystemComponent.h"
 #include "TimerManager.h"
-#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 
 void UEnemySpawnSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	// Create HISM Component on a dummy actor
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.ObjectFlags |= RF_Transient; // Don't save this actor
-	HISMContainerActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
-	
-	if (HISMContainerActor)
+	// Only initialize in game worlds
+	UWorld* World = GetWorld();
+	if (!World || !World->IsGameWorld())
 	{
-		HISMComponent = NewObject<UHierarchicalInstancedStaticMeshComponent>(HISMContainerActor, TEXT("EnemyHISM"));
-		HISMComponent->RegisterComponent();
-		HISMContainerActor->SetRootComponent(HISMComponent);
-		
-		// Optimization: Disable collision for HISM (we use Actor capsules for collision)
-		HISMComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		HISMComponent->CastShadow = false;
-		HISMComponent->SetCanEverAffectNavigation(false);
+		return;
 	}
-	
-	// Initialize free list
-	FreeHISMIndices.Empty();
 
-	// Set default values - TRUE SURVIVOR MODE 🌊🌊🌊
-	InitialSpawnInterval = 0.3f;      // Even faster start
-	MinSpawnInterval = 0.05f;         // Extreme speed at high difficulty
+	// Initialize variables (ISM will be created on first tick)
+	ISMComponent = nullptr;
+	ISMContainerActor = nullptr;
+	bISMInitialized = false;
+	FreeISMIndices.Empty();
+
+	// Set default values
+	InitialSpawnInterval = 0.3f;
+	MinSpawnInterval = 0.05f;
 	CurrentSpawnInterval = InitialSpawnInterval;
-	MaxActiveEnemies = 1000;          // Massive horde (was 200)
-	DifficultyAdjustInterval = 5.0f;  // Scale every 5 seconds (was 10s)
-	SpawnIntervalMultiplier = 0.9f;   
-	SpawnDistance = 2500.0f;          // Spawn a bit further out for visual scale
+	MaxActiveEnemies = 1000;
+	DifficultyAdjustInterval = 5.0f;
+	SpawnIntervalMultiplier = 0.9f;
+	SpawnDistance = 2500.0f;
 	DespawnDistance = 6000.0f;
 	GameTime = 0.0f;
+	ISMScaleMultiplier = 0.1f;  // Scale down mesh to 1/10
 
 	// Start spawning
 	UpdateSpawnTimer();
 
-	UE_LOG(LogTemp, Warning, TEXT("EnemySpawnSubsystem Initialized - HISM SURVIVOR MODE!"));
+	UE_LOG(LogTemp, Log, TEXT("EnemySpawnSubsystem Initialized"));
+}
+
+void UEnemySpawnSubsystem::InitializeISM()
+{
+	if (bISMInitialized)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// Create ISM Component on a container actor
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.ObjectFlags |= RF_Transient;
+	ISMContainerActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	
+	if (ISMContainerActor)
+	{
+		ISMComponent = NewObject<UInstancedStaticMeshComponent>(ISMContainerActor, TEXT("EnemyISM"));
+		
+		if (ISMComponent)
+		{
+			ISMContainerActor->SetRootComponent(ISMComponent);
+			
+			ISMComponent->SetMobility(EComponentMobility::Movable);
+			ISMComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			ISMComponent->CastShadow = false;
+			ISMComponent->SetCanEverAffectNavigation(false);
+			ISMComponent->NumCustomDataFloats = 0;
+			ISMComponent->SetCullDistances(0, 0);
+			
+			ISMComponent->RegisterComponent();
+			ISMContainerActor->AddInstanceComponent(ISMComponent);
+			
+			ISMComponent->SetVisibility(true);
+			ISMComponent->SetHiddenInGame(false);
+			
+			bISMInitialized = true;
+			UE_LOG(LogTemp, Log, TEXT("ISM Component initialized"));
+		}
+	}
 }
 
 void UEnemySpawnSubsystem::Deinitialize()
 {
-	// Clear timer
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(SpawnTimerHandle);
 	}
 
-	// Cleanup HISM
-	FreeHISMIndices.Empty();
+	FreeISMIndices.Empty();
 	
-	if (HISMComponent)
+	if (ISMComponent)
 	{
-		HISMComponent->ClearInstances();
-		HISMComponent = nullptr;
+		ISMComponent->ClearInstances();
+		ISMComponent = nullptr;
 	}
 	
-	if (HISMContainerActor)
+	if (ISMContainerActor)
 	{
-		HISMContainerActor->Destroy();
-		HISMContainerActor = nullptr;
+		ISMContainerActor->Destroy();
+		ISMContainerActor = nullptr;
 	}
 
 	Super::Deinitialize();
@@ -79,47 +116,66 @@ void UEnemySpawnSubsystem::Deinitialize()
 
 void UEnemySpawnSubsystem::Tick(float DeltaTime)
 {
+	if (!GetWorld() || !GetWorld()->IsGameWorld())
+	{
+		return;
+	}
+
+	// Delayed ISM initialization (first tick)
+	if (!bISMInitialized)
+	{
+		InitializeISM();
+	}
+
+	if (!ISMComponent)
+	{
+		return;
+	}
+
 	GameTime += DeltaTime;
 
-	// Adjust difficulty every interval
+	// Adjust difficulty
 	static float TimeSinceLastAdjustment = 0.0f;
 	TimeSinceLastAdjustment += DeltaTime;
 
 	if (TimeSinceLastAdjustment >= DifficultyAdjustInterval)
 	{
 		TimeSinceLastAdjustment = 0.0f;
-
-		// Reduce spawn interval
 		CurrentSpawnInterval *= SpawnIntervalMultiplier;
 		CurrentSpawnInterval = FMath::Max(CurrentSpawnInterval, MinSpawnInterval);
-
-		// Update spawn timer
 		UpdateSpawnTimer();
 	}
 
-	// Update HISM Instances
-	if (HISMComponent)
+	// Update ISM Instances
+	if (ISMComponent && ISMComponent->GetStaticMesh())
 	{
+		bool bAnyUpdated = false;
 		for (AEnemyBase* Enemy : ActiveEnemies)
 		{
-		if (IsValid(Enemy) && Enemy->GetHISMInstanceIndex() != INDEX_NONE)
+			if (IsValid(Enemy) && Enemy->GetISMInstanceIndex() != INDEX_NONE)
 			{
+				FTransform InstanceTransform;
 				if (Enemy->IsHidden())
 				{
-					// Hide by scaling to zero
-				HISMComponent->UpdateInstanceTransform(Enemy->GetHISMInstanceIndex(), FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector::ZeroVector), true, false);
+					InstanceTransform = FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector::ZeroVector);
 				}
 				else
 				{
-				HISMComponent->UpdateInstanceTransform(Enemy->GetHISMInstanceIndex(), Enemy->GetActorTransform(), true, false);
+					InstanceTransform = Enemy->GetActorTransform();
+					InstanceTransform.SetScale3D(InstanceTransform.GetScale3D() * ISMScaleMultiplier);
 				}
+				ISMComponent->UpdateInstanceTransform(Enemy->GetISMInstanceIndex(), InstanceTransform, true, false);
+				bAnyUpdated = true;
 			}
 		}
-		// Batch send to GPU
-		HISMComponent->MarkRenderStateDirty();
+		
+		if (bAnyUpdated)
+		{
+			ISMComponent->MarkRenderStateDirty();
+		}
 	}
 
-	// Cleanup distant enemies (less frequent for performance)
+	// Cleanup distant enemies
 	static float CleanupTimer = 0.0f;
 	CleanupTimer += DeltaTime;
 	if (CleanupTimer >= 1.0f)
@@ -131,12 +187,25 @@ void UEnemySpawnSubsystem::Tick(float DeltaTime)
 
 void UEnemySpawnSubsystem::SetEnemyMesh(UStaticMesh* Mesh)
 {
-	if (HISMComponent && Mesh)
+	if (ISMComponent && Mesh)
 	{
-		HISMComponent->SetStaticMesh(Mesh);
+		ISMComponent->SetStaticMesh(Mesh);
+		
+		// Copy materials from mesh
+		const TArray<FStaticMaterial>& StaticMaterials = Mesh->GetStaticMaterials();
+		for (int32 i = 0; i < StaticMaterials.Num(); i++)
+		{
+			UMaterialInterface* Material = StaticMaterials[i].MaterialInterface;
+			if (Material)
+			{
+				ISMComponent->SetMaterial(i, Material);
+			}
+		}
+		
+		ISMComponent->MarkRenderStateDirty();
+		UE_LOG(LogTemp, Log, TEXT("ISM mesh set: %s"), *Mesh->GetName());
 	}
 }
-
 
 TStatId UEnemySpawnSubsystem::GetStatId() const
 {
@@ -149,50 +218,43 @@ void UEnemySpawnSubsystem::OnEnemyDied(AEnemyBase* Enemy)
 	{
 		ActiveEnemies.Remove(Enemy);
 
-		// Release HISM index back to free list
-		int32 HISMIndex = Enemy->GetHISMInstanceIndex();
-		if (HISMIndex != INDEX_NONE)
+		int32 ISMIndex = Enemy->GetISMInstanceIndex();
+		if (ISMIndex != INDEX_NONE)
 		{
-			ReleaseHISMIndex(HISMIndex);
-			Enemy->SetHISMInstanceIndex(INDEX_NONE);
+			ReleaseISMIndex(ISMIndex);
+			Enemy->SetISMInstanceIndex(INDEX_NONE);
 		}
 	}
 }
 
 void UEnemySpawnSubsystem::SpawnEnemy()
 {
-	if (!EnemyClass)
+	if (!EnemyClass || !ISMComponent)
 	{
 		return;
 	}
 
-	// Auto-setup HISM mesh from enemy class CDO (only once)
-	if (HISMComponent && !HISMComponent->GetStaticMesh())
+	// Auto-setup ISM mesh from enemy class CDO (only once)
+	if (!ISMComponent->GetStaticMesh())
 	{
-		// Try to get mesh from EnemyClass CDO
 		if (const AEnemyBase* EnemyCDO = EnemyClass->GetDefaultObject<AEnemyBase>())
 		{
 			UStaticMesh* Mesh = EnemyCDO->GetEnemyMesh();
 			if (Mesh)
 			{
-				HISMComponent->SetStaticMesh(Mesh);
-				UE_LOG(LogTemp, Warning, TEXT("HISM: Auto-set mesh from EnemyClass CDO: %s"), *Mesh->GetName());
+				SetEnemyMesh(Mesh);
 			}
 			else
 			{
-				UE_LOG(LogTemp, Error, TEXT("HISM: EnemyClass has no EnemyMesh set! Enemies will be invisible. Set EnemyMesh in the Blueprint."));
+				UE_LOG(LogTemp, Error, TEXT("EnemyClass has no EnemyMesh set! Set EnemyMesh in the Blueprint."));
 			}
 		}
 	}
 
-	// Spawn massive batches based on game time
-	// Start with 5, increase by 1 every 30 seconds
+	// Spawn batch
 	int32 BaseBatchSize = 5;
 	int32 TimeBonus = FMath::FloorToInt(GameTime / 30.0f);
-	int32 EnemiesToSpawn = BaseBatchSize + TimeBonus;
-	
-	// Limit to reasonable batch for stability
-	EnemiesToSpawn = FMath::Min(EnemiesToSpawn, 20);
+	int32 EnemiesToSpawn = FMath::Min(BaseBatchSize + TimeBonus, 20);
 
 	for (int32 i = 0; i < EnemiesToSpawn; i++)
 	{
@@ -222,19 +284,16 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 			ApplyEnemyScaling(Enemy, GameTime);
 			ActiveEnemies.Add(Enemy);
 
-			// HISM Integration - always acquire new index (old one was released on death)
-			if (HISMComponent && HISMComponent->GetStaticMesh())
+			// ISM Integration
+			if (ISMComponent && ISMComponent->GetStaticMesh())
 			{
-				// Ensure enemy has no stale index (should be INDEX_NONE from pool)
-				if (Enemy->GetHISMInstanceIndex() != INDEX_NONE)
+				if (Enemy->GetISMInstanceIndex() != INDEX_NONE)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("Enemy had stale HISM index %d, releasing it"), Enemy->GetHISMInstanceIndex());
-					ReleaseHISMIndex(Enemy->GetHISMInstanceIndex());
+					ReleaseISMIndex(Enemy->GetISMInstanceIndex());
 				}
 				
-				// Acquire index from free list or create new
-				int32 NewIndex = AcquireHISMIndex(Enemy->GetActorTransform());
-				Enemy->SetHISMInstanceIndex(NewIndex);
+				int32 NewIndex = AcquireISMIndex(Enemy->GetActorTransform());
+				Enemy->SetISMInstanceIndex(NewIndex);
 			}
 		}
 	}
@@ -249,15 +308,10 @@ FVector UEnemySpawnSubsystem::GetRandomSpawnLocation() const
 	}
 
 	FVector PlayerLocation = Player->GetActorLocation();
-
-	// Random angle around player (360 degrees)
 	float RandomAngle = FMath::RandRange(0.0f, 360.0f);
 	float RadAngle = FMath::DegreesToRadians(RandomAngle);
-
-	// Random distance for layered waves (between SpawnDistance and SpawnDistance * 1.5)
 	float RandomDistance = FMath::RandRange(SpawnDistance * 0.8f, SpawnDistance * 1.2f);
 
-	// Calculate offset
 	FVector Offset = FVector(
 		FMath::Cos(RadAngle) * RandomDistance,
 		FMath::Sin(RadAngle) * RandomDistance,
@@ -286,15 +340,12 @@ void UEnemySpawnSubsystem::ApplyEnemyScaling(AEnemyBase* Enemy, float GameTimeSe
 
 	if (Attributes)
 	{
-		// Simple scaling: +10% health per minute
 		float HealthMultiplier = 1.0f + (GameTimeSeconds / 60.0f) * 0.1f;
 		float BaseHealth = 100.0f;
 		float ScaledHealth = BaseHealth * HealthMultiplier;
 
 		Attributes->SetMaxHealth(ScaledHealth);
 		Attributes->SetHealth(ScaledHealth);
-
-		UE_LOG(LogTemp, Log, TEXT("Enemy scaled: Health = %.2f (Multiplier: %.2f)"), ScaledHealth, HealthMultiplier);
 	}
 }
 
@@ -308,25 +359,20 @@ void UEnemySpawnSubsystem::CleanupDistantEnemies()
 
 	FVector PlayerLocation = Player->GetActorLocation();
 
-	// Check all active enemies
 	for (int32 i = ActiveEnemies.Num() - 1; i >= 0; i--)
 	{
 		AEnemyBase* Enemy = ActiveEnemies[i];
 		
-		// Remove invalid enemies
 		if (!IsValid(Enemy))
 		{
 			ActiveEnemies.RemoveAt(i);
 			continue;
 		}
 
-		// Check distance
 		float Distance = FVector::Dist(Enemy->GetActorLocation(), PlayerLocation);
 		if (Distance > DespawnDistance)
 		{
-			UE_LOG(LogTemp, Log, TEXT("Despawning distant enemy (%.2f units away)"), Distance);
 			Enemy->Deactivate();
-			// No need to remove from ActiveEnemies here, Deactivate() calls OnEnemyDied() which handles it
 		}
 	}
 }
@@ -338,62 +384,67 @@ void UEnemySpawnSubsystem::UpdateSpawnTimer()
 		return;
 	}
 
-	// Clear existing timer
 	GetWorld()->GetTimerManager().ClearTimer(SpawnTimerHandle);
-
-	// Set new timer
 	GetWorld()->GetTimerManager().SetTimer(
 		SpawnTimerHandle,
 		this,
 		&UEnemySpawnSubsystem::SpawnEnemy,
 		CurrentSpawnInterval,
-		true // Loop
+		true
 	);
 }
 
-int32 UEnemySpawnSubsystem::AcquireHISMIndex(const FTransform& Transform)
+int32 UEnemySpawnSubsystem::AcquireISMIndex(const FTransform& Transform)
 {
-	if (!HISMComponent)
+	if (!ISMComponent)
 	{
 		return INDEX_NONE;
 	}
 
-	// Try to reuse from free list first
-	if (FreeHISMIndices.Num() > 0)
+	FTransform ScaledTransform = Transform;
+	ScaledTransform.SetScale3D(ScaledTransform.GetScale3D() * ISMScaleMultiplier);
+
+	int32 ResultIndex = INDEX_NONE;
+
+	// Try to reuse from free list
+	if (FreeISMIndices.Num() > 0)
 	{
-		int32 ReuseIndex = FreeHISMIndices.Pop(false);
+		int32 ReuseIndex = FreeISMIndices.Pop(false);
 		
-		// Validate index is still in range
-		if (ReuseIndex >= 0 && ReuseIndex < HISMComponent->GetInstanceCount())
+		if (ReuseIndex >= 0 && ReuseIndex < ISMComponent->GetInstanceCount())
 		{
-			// Update transform to show the instance
-			HISMComponent->UpdateInstanceTransform(ReuseIndex, Transform, true, true);
-			return ReuseIndex;
+			ISMComponent->UpdateInstanceTransform(ReuseIndex, ScaledTransform, true, true);
+			ResultIndex = ReuseIndex;
 		}
-		// Invalid index, skip it and create new
 	}
 
-	// No free index available, create new instance
-	return HISMComponent->AddInstance(Transform, true);
+	// Create new instance if needed
+	if (ResultIndex == INDEX_NONE)
+	{
+		ResultIndex = ISMComponent->AddInstance(ScaledTransform, true);
+	}
+
+	if (ResultIndex != INDEX_NONE)
+	{
+		ISMComponent->MarkRenderStateDirty();
+	}
+
+	return ResultIndex;
 }
 
-void UEnemySpawnSubsystem::ReleaseHISMIndex(int32 Index)
+void UEnemySpawnSubsystem::ReleaseISMIndex(int32 Index)
 {
-	if (!HISMComponent || Index == INDEX_NONE)
+	if (!ISMComponent || Index == INDEX_NONE)
 	{
 		return;
 	}
 
-	// Validate index is in range
-	if (Index < 0 || Index >= HISMComponent->GetInstanceCount())
+	if (Index < 0 || Index >= ISMComponent->GetInstanceCount())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Attempted to release invalid HISM index %d (count: %d)"), Index, HISMComponent->GetInstanceCount());
 		return;
 	}
 
-	// Hide the instance by scaling to zero
-	HISMComponent->UpdateInstanceTransform(Index, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector::ZeroVector), true, true);
-
-	// Add to free list for reuse
-	FreeHISMIndices.Add(Index);
+	// Hide by scaling to zero
+	ISMComponent->UpdateInstanceTransform(Index, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector::ZeroVector), true, true);
+	FreeISMIndices.Add(Index);
 }

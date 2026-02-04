@@ -45,7 +45,7 @@ AEnemyBase::AEnemyBase()
 	ContactDamage = 10.0f;
 	bIsDead = false;
 	bHasDealtDamage = false;
-	HISMInstanceIndex = INDEX_NONE;
+	ISMInstanceIndex = INDEX_NONE;
 	EnemyMesh = nullptr;
 }
 
@@ -56,7 +56,7 @@ void AEnemyBase::Activate(const FVector& Location)
 	bHasDealtDamage = false;
 	
 	// Reset HISM index - will be assigned by SpawnSubsystem
-	HISMInstanceIndex = INDEX_NONE;
+	ISMInstanceIndex = INDEX_NONE;
 	
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
