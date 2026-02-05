@@ -54,6 +54,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Spawning|Optimization")
 	float ISMScaleMultiplier;
 
+
 	/** Initialize ISM component (called on first tick) */
 	void InitializeISM();
 

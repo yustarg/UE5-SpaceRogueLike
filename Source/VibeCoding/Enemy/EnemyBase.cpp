@@ -11,6 +11,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Particles/ParticleSystem.h"
 #include "AIController.h"
 #include "Navigation/PathFollowingComponent.h"
 
@@ -47,6 +48,7 @@ AEnemyBase::AEnemyBase()
 	bHasDealtDamage = false;
 	ISMInstanceIndex = INDEX_NONE;
 	EnemyMesh = nullptr;
+	ISMRotationOffset = FRotator::ZeroRotator;
 }
 
 void AEnemyBase::Activate(const FVector& Location)
@@ -178,6 +180,11 @@ void AEnemyBase::Die()
 	}
 
 	// TODO: Play death effects
+	if (DeathExplosionVFX)
+	{
+		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), DeathExplosionVFX, GetActorTransform());
+	}
+
 	// TODO: Spawn loot
 
 	// Use pool instead of Destroy

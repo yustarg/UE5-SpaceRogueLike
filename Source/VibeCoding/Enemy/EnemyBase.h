@@ -34,6 +34,7 @@ public:
 	/** ISM instance index accessors */
 	int32 GetISMInstanceIndex() const { return ISMInstanceIndex; }
 	void SetISMInstanceIndex(int32 Index) { ISMInstanceIndex = Index; }
+	FRotator GetISMRotationOffset() const { return ISMRotationOffset; }
 
 	/** Get the static mesh used for ISM rendering */
 	UFUNCTION(BlueprintPure, Category = "Rendering")
@@ -86,6 +87,14 @@ protected:
 	/** Static mesh used for ISM rendering (set this in Blueprint) */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rendering")
 	UStaticMesh* EnemyMesh;
+
+	/** Rotation offset applied to ISM instances (set per enemy type) */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rendering")
+	FRotator ISMRotationOffset;
+
+	/** Explosion effect on death */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	UParticleSystem* DeathExplosionVFX;
 
 	//=============================================================================
 	// Combat (Contact Damage)

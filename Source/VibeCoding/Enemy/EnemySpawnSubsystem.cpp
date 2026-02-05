@@ -31,7 +31,7 @@ void UEnemySpawnSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	InitialSpawnInterval = 0.3f;
 	MinSpawnInterval = 0.05f;
 	CurrentSpawnInterval = InitialSpawnInterval;
-	MaxActiveEnemies = 1000;
+	MaxActiveEnemies = 2000;
 	DifficultyAdjustInterval = 5.0f;
 	SpawnIntervalMultiplier = 0.9f;
 	SpawnDistance = 2500.0f;
@@ -162,6 +162,7 @@ void UEnemySpawnSubsystem::Tick(float DeltaTime)
 				else
 				{
 					InstanceTransform = Enemy->GetActorTransform();
+					InstanceTransform.ConcatenateRotation(Enemy->GetISMRotationOffset().Quaternion());
 					InstanceTransform.SetScale3D(InstanceTransform.GetScale3D() * ISMScaleMultiplier);
 				}
 				ISMComponent->UpdateInstanceTransform(Enemy->GetISMInstanceIndex(), InstanceTransform, true, false);
@@ -292,7 +293,9 @@ void UEnemySpawnSubsystem::SpawnEnemy()
 					ReleaseISMIndex(Enemy->GetISMInstanceIndex());
 				}
 				
-				int32 NewIndex = AcquireISMIndex(Enemy->GetActorTransform());
+				FTransform InstanceTransform = Enemy->GetActorTransform();
+				InstanceTransform.ConcatenateRotation(Enemy->GetISMRotationOffset().Quaternion());
+				int32 NewIndex = AcquireISMIndex(InstanceTransform);
 				Enemy->SetISMInstanceIndex(NewIndex);
 			}
 		}
@@ -341,7 +344,7 @@ void UEnemySpawnSubsystem::ApplyEnemyScaling(AEnemyBase* Enemy, float GameTimeSe
 	if (Attributes)
 	{
 		float HealthMultiplier = 1.0f + (GameTimeSeconds / 60.0f) * 0.1f;
-		float BaseHealth = 100.0f;
+		float BaseHealth = 1.0f;
 		float ScaledHealth = BaseHealth * HealthMultiplier;
 
 		Attributes->SetMaxHealth(ScaledHealth);
